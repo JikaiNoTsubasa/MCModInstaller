@@ -3,8 +3,8 @@ namespace MCModInstaller.Utilities;
 public static class Constants
 {
     // Download configuration
-    public const string DownloadUrl = "https://triedge.ovh/mcplantator-1.0.0.jar";
-    public const string ModFileName = "mcplantator-1.0.0.jar";
+    public const string ModsJsonUrl = "https://triedge.ovh/mods/mods.json";
+    public const string ModsBaseUrl = "https://triedge.ovh/mods/";
 
     // Configuration file settings
     public const string ConfigFileName = "mcmodinstaller.config.json";
@@ -37,8 +37,11 @@ public static class Constants
     public const string StatusIdle = "Prêt à installer";
     public const string StatusValidating = "Validation du chemin...";
     public const string StatusDownloading = "Téléchargement du mod...";
+    public const string StatusDownloadingModList = "Téléchargement de la liste des mods...";
     public const string StatusInstalling = "Installation du mod...";
     public const string StatusComplete = "Installation terminée !";
+    public const string StatusDownloadingMod = "Téléchargement de {0}...";
+    public const string StatusVerifyingMods = "Vérification des fichiers locaux...";
 
     // Success messages
     public const string SuccessTitle = "Installation réussie";
@@ -56,6 +59,10 @@ public static class Constants
     public const string ErrorFileLocked = "Le fichier mod est utilisé par un autre programme. Fermez Minecraft et réessayez.";
     public const string ErrorAccessDenied = "Accès refusé. Essayez de lancer l'installateur en tant qu'administrateur.";
     public const string ErrorUnknown = "Une erreur inattendue s'est produite. Consultez le fichier journal pour plus de détails.";
+    public const string ErrorJsonDownload = "Impossible de télécharger la liste des mods. Vérifiez votre connexion Internet.";
+    public const string ErrorJsonParse = "Impossible de lire la liste des mods. Le fichier est peut-être corrompu.";
+    public const string ErrorSomeModsFailed = "Certains mods n'ont pas pu être téléchargés. Consultez les détails ci-dessous.";
+    public const string ErrorModsNotFoundLocally = "Certains mods sont manquants dans le dossier d'installation alors qu'ils auraient dû être téléchargés.";
 
     // FolderBrowserDialog
     public const string FolderBrowserDescription = "Sélectionnez le dossier de l'instance Minecraft CurseForge";

@@ -27,6 +27,21 @@ public partial class MainForm : Form
         {
             pathTextBox.Text = config.LastInstancePath;
         }
+
+        // Validate initial path state
+        ValidateAndUpdateInstallButton();
+    }
+
+    private void PathTextBox_TextChanged(object sender, EventArgs e)
+    {
+        ValidateAndUpdateInstallButton();
+    }
+
+    private void ValidateAndUpdateInstallButton()
+    {
+        var path = pathTextBox.Text;
+        var (isValid, _) = _pathValidationService.ValidatePath(path);
+        installButton.Enabled = isValid;
     }
 
     private void BrowseButton_Click(object sender, EventArgs e)
@@ -52,10 +67,16 @@ public partial class MainForm : Form
     {
         var path = pathTextBox.Text;
 
+        // Clear previous logs
+        logTextBox.Clear();
+        AddLog("Démarrage de l'installation...");
+
         // Validate path
+        AddLog("Validation du chemin d'accès...");
         var (isValid, errorMessage) = _pathValidationService.ValidatePath(path);
         if (!isValid)
         {
+            AddLog($"Erreur : {errorMessage}");
             MessageBox.Show(
                 errorMessage,
                 Constants.ErrorTitle,
@@ -63,6 +84,7 @@ public partial class MainForm : Form
                 MessageBoxIcon.Error);
             return;
         }
+        AddLog("Chemin d'accès validé avec succès");
 
         // Disable controls
         installButton.Enabled = false;
@@ -73,32 +95,119 @@ public partial class MainForm : Form
         // Show progress bar
         progressBar.Visible = true;
         statusLabel.Visible = true;
-        statusLabel.Text = Constants.StatusDownloading;
+        statusLabel.Text = Constants.StatusDownloadingModList;
 
         try
         {
             _cancellationTokenSource = new CancellationTokenSource();
 
-            var modsPath = _pathValidationService.GetModsPath(path);
-            var destinationFile = Path.Combine(modsPath, Constants.ModFileName);
+            // Download mods list JSON
+            AddLog("Téléchargement de la liste des mods (mods.json)...");
+            List<string> modsList;
+            try
+            {
+                modsList = await _downloadService.DownloadModsListAsync(_cancellationTokenSource.Token);
+                AddLog($"Liste des mods téléchargée avec succès ({modsList.Count} mod(s) trouvé(s))");
+            }
+            catch (Exception ex)
+            {
+                AddLog($"Erreur lors du téléchargement de la liste : {ex.Message}");
+                MessageBox.Show(
+                    ex.Message,
+                    Constants.ErrorTitle,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+                statusLabel.Text = Constants.StatusIdle;
+                throw;
+            }
 
-            var progress = new Progress<DownloadProgress>(p =>
+            if (modsList.Count == 0)
+            {
+                AddLog("Erreur : La liste des mods est vide");
+                MessageBox.Show(
+                    "La liste des mods est vide.",
+                    Constants.ErrorTitle,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+                statusLabel.Text = Constants.StatusIdle;
+                throw new InvalidOperationException("La liste des mods est vide.");
+            }
+
+            // Log all mods to download
+            AddLog("Mods à télécharger :");
+            foreach (var mod in modsList)
+            {
+                AddLog($"  - {mod}");
+            }
+
+            // Download all mods
+            var modsPath = _pathValidationService.GetModsPath(path);
+            AddLog($"Début du téléchargement vers : {modsPath}");
+
+            var progress = new Progress<MultiModDownloadProgress>(p =>
             {
                 if (InvokeRequired)
                 {
-                    Invoke(() => UpdateProgress(p));
+                    Invoke(() => UpdateMultiModProgress(p));
                 }
                 else
                 {
-                    UpdateProgress(p);
+                    UpdateMultiModProgress(p);
                 }
             });
 
-            await _downloadService.DownloadFileAsync(
-                Constants.DownloadUrl,
-                destinationFile,
+            var results = await _downloadService.DownloadMultipleModsAsync(
+                modsList,
+                modsPath,
                 progress,
+                AddLog,
                 _cancellationTokenSource.Token);
+
+            AddLog($"Téléchargement terminé, analyse des résultats... ({results.Count} mod(s) traité(s))");
+
+            // Log results
+            foreach (var result in results)
+            {
+                if (result.Success)
+                {
+                    AddLog($"✓ {result.ModFileName} - Téléchargé avec succès");
+                }
+                else
+                {
+                    AddLog($"✗ {result.ModFileName} - Échec : {result.ErrorMessage}");
+                }
+            }
+
+            // Vérification locale des fichiers
+            AddLog("Vérification de la présence des fichiers dans le dossier...");
+            statusLabel.Text = Constants.StatusVerifyingMods;
+
+            var missingFiles = new List<string>();
+            foreach (var result in results.Where(r => r.Success))
+            {
+                var filePath = Path.Combine(modsPath, result.ModFileName);
+                if (!File.Exists(filePath))
+                {
+                    AddLog($"⚠ ERREUR: {result.ModFileName} est marqué comme téléchargé mais est ABSENT du dossier!");
+                    missingFiles.Add(result.ModFileName);
+                    result.Success = false;
+                    result.ErrorMessage = "Fichier manquant après téléchargement";
+                }
+                else
+                {
+                    var fileInfo = new FileInfo(filePath);
+                    AddLog($"✓ {result.ModFileName} vérifié (Taille: {fileInfo.Length / 1024} Ko)");
+                }
+            }
+
+            if (missingFiles.Any())
+            {
+                AddLog($"⚠ ATTENTION: {missingFiles.Count} fichier(s) manquant(s) détecté(s)!");
+            }
+            else
+            {
+                AddLog("✓ Tous les fichiers téléchargés sont présents dans le dossier");
+            }
 
             // Save configuration
             var config = new InstallationConfig
@@ -106,18 +215,58 @@ public partial class MainForm : Form
                 LastInstancePath = path
             };
             _configService.SaveConfig(config);
+            AddLog("Configuration sauvegardée");
 
-            // Show success message
-            MessageBox.Show(
-                Constants.SuccessMessage,
-                Constants.SuccessTitle,
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            // Check for failures (including missing files)
+            var failedMods = results.Where(r => !r.Success).ToList();
+            var successMods = results.Where(r => r.Success).ToList();
+
+            if (failedMods.Any())
+            {
+                AddLog($"Installation terminée avec {failedMods.Count} erreur(s)");
+
+                // Séparer les erreurs de téléchargement et les fichiers manquants
+                var downloadErrors = failedMods.Where(f => f.ErrorMessage != "Fichier manquant après téléchargement").ToList();
+                var missingFileErrors = failedMods.Where(f => f.ErrorMessage == "Fichier manquant après téléchargement").ToList();
+
+                var errorMsg = Constants.ErrorSomeModsFailed + "\n";
+
+                if (missingFileErrors.Any())
+                {
+                    errorMsg += $"\n⚠ Fichiers manquants après téléchargement ({missingFileErrors.Count}):\n";
+                    errorMsg += string.Join("\n", missingFileErrors.Select(f => $"- {f.ModFileName}"));
+                }
+
+                if (downloadErrors.Any())
+                {
+                    errorMsg += $"\n\nErreurs de téléchargement ({downloadErrors.Count}):\n";
+                    errorMsg += string.Join("\n", downloadErrors.Select(f => $"- {f.ModFileName}: {f.ErrorMessage}"));
+                }
+
+                errorMsg += $"\n\n✓ {successMods.Count} mod(s) installé(s) avec succès";
+
+                MessageBox.Show(
+                    errorMsg,
+                    Constants.ErrorTitle,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+            }
+            else
+            {
+                AddLog($"Installation terminée avec succès ! {results.Count} mod(s) installé(s)");
+                // All mods downloaded successfully
+                MessageBox.Show(
+                    $"{results.Count} mod(s) ont été installés avec succès !\n\nTous les fichiers ont été vérifiés et sont présents dans le dossier.",
+                    Constants.SuccessTitle,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
+            }
 
             statusLabel.Text = Constants.StatusComplete;
         }
         catch (OperationCanceledException)
         {
+            AddLog("Installation annulée par l'utilisateur");
             MessageBox.Show(
                 "Installation annulée.",
                 Constants.ErrorTitle,
@@ -127,6 +276,7 @@ public partial class MainForm : Form
         }
         catch (FileNotFoundException)
         {
+            AddLog($"Erreur : {Constants.ErrorFileNotFound}");
             MessageBox.Show(
                 Constants.ErrorFileNotFound,
                 Constants.ErrorTitle,
@@ -136,6 +286,7 @@ public partial class MainForm : Form
         }
         catch (UnauthorizedAccessException)
         {
+            AddLog($"Erreur : {Constants.ErrorAccessDenied}");
             MessageBox.Show(
                 Constants.ErrorAccessDenied,
                 Constants.ErrorTitle,
@@ -145,6 +296,7 @@ public partial class MainForm : Form
         }
         catch (IOException ex) when (ex.Message.Contains(Constants.ErrorDiskFull))
         {
+            AddLog($"Erreur : {Constants.ErrorDiskFull}");
             MessageBox.Show(
                 Constants.ErrorDiskFull,
                 Constants.ErrorTitle,
@@ -154,6 +306,7 @@ public partial class MainForm : Form
         }
         catch (Exception ex)
         {
+            AddLog($"Erreur inattendue : {ex.Message}");
             MessageBox.Show(
                 $"{Constants.ErrorUnknown}\n\nDétails: {ex.Message}",
                 Constants.ErrorTitle,
@@ -178,6 +331,31 @@ public partial class MainForm : Form
     {
         progressBar.Value = progress.PercentComplete;
         statusLabel.Text = $"{progress.PercentComplete}% - {progress.FormattedSpeed}";
+    }
+
+    private void UpdateMultiModProgress(MultiModDownloadProgress progress)
+    {
+        progressBar.Value = progress.OverallPercentComplete;
+        var modProgress = progress.CurrentModProgress?.PercentComplete ?? 0;
+        statusLabel.Text = $"Mod {progress.CurrentModIndex + 1}/{progress.TotalMods}: {progress.CurrentModFileName} ({modProgress}%)";
+    }
+
+    private void AddLog(string message)
+    {
+        var timestamp = DateTime.Now.ToString("HH:mm:ss");
+        var logMessage = $"[{timestamp}] {message}";
+
+        if (InvokeRequired)
+        {
+            Invoke(() =>
+            {
+                logTextBox.AppendText(logMessage + Environment.NewLine);
+            });
+        }
+        else
+        {
+            logTextBox.AppendText(logMessage + Environment.NewLine);
+        }
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)

@@ -26,6 +26,8 @@ namespace MCModInstaller.Forms
             this.progressBar = new System.Windows.Forms.ProgressBar();
             this.statusLabel = new System.Windows.Forms.Label();
             this.installButton = new System.Windows.Forms.Button();
+            this.logLabel = new System.Windows.Forms.Label();
+            this.logTextBox = new System.Windows.Forms.TextBox();
             this.instructionsGroupBox.SuspendLayout();
             this.SuspendLayout();
             //
@@ -74,6 +76,7 @@ namespace MCModInstaller.Forms
             this.pathTextBox.Name = "pathTextBox";
             this.pathTextBox.Size = new System.Drawing.Size(385, 23);
             this.pathTextBox.TabIndex = 3;
+            this.pathTextBox.TextChanged += new System.EventHandler(this.PathTextBox_TextChanged);
             //
             // browseButton
             //
@@ -105,6 +108,7 @@ namespace MCModInstaller.Forms
             //
             // installButton
             //
+            this.installButton.Enabled = false;
             this.installButton.Location = new System.Drawing.Point(200, 275);
             this.installButton.Name = "installButton";
             this.installButton.Size = new System.Drawing.Size(100, 30);
@@ -113,11 +117,34 @@ namespace MCModInstaller.Forms
             this.installButton.UseVisualStyleBackColor = true;
             this.installButton.Click += new System.EventHandler(this.InstallButton_Click);
             //
+            // logLabel
+            //
+            this.logLabel.AutoSize = true;
+            this.logLabel.Location = new System.Drawing.Point(12, 315);
+            this.logLabel.Name = "logLabel";
+            this.logLabel.Size = new System.Drawing.Size(37, 15);
+            this.logLabel.TabIndex = 8;
+            this.logLabel.Text = "Logs :";
+            //
+            // logTextBox
+            //
+            this.logTextBox.BackColor = System.Drawing.SystemColors.Window;
+            this.logTextBox.Font = new System.Drawing.Font("Consolas", 9F);
+            this.logTextBox.Location = new System.Drawing.Point(12, 333);
+            this.logTextBox.Multiline = true;
+            this.logTextBox.Name = "logTextBox";
+            this.logTextBox.ReadOnly = true;
+            this.logTextBox.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
+            this.logTextBox.Size = new System.Drawing.Size(476, 120);
+            this.logTextBox.TabIndex = 9;
+            //
             // MainForm
             //
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-            this.ClientSize = new System.Drawing.Size(500, 320);
+            this.ClientSize = new System.Drawing.Size(500, 465);
+            this.Controls.Add(this.logTextBox);
+            this.Controls.Add(this.logLabel);
             this.Controls.Add(this.installButton);
             this.Controls.Add(this.statusLabel);
             this.Controls.Add(this.progressBar);
@@ -148,5 +175,7 @@ namespace MCModInstaller.Forms
         private System.Windows.Forms.ProgressBar progressBar;
         private System.Windows.Forms.Label statusLabel;
         private System.Windows.Forms.Button installButton;
+        private System.Windows.Forms.Label logLabel;
+        private System.Windows.Forms.TextBox logTextBox;
     }
 }
